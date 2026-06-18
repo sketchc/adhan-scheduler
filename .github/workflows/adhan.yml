@@ -1,0 +1,42 @@
+name: Adhan scheduler
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'   # every 5 minutes (GitHub's minimum); best-effort timing
+  workflow_dispatch: {}      # lets you run it manually to test
+
+permissions:
+  contents: write            # to persist last_fired.json
+
+concurrency:
+  group: adhan
+  cancel-in-progress: false
+
+jobs:
+  adhan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run scheduler
+        env:
+          ADHAN_WEBHOOK_URL: ${{ secrets.ADHAN_WEBHOOK_URL }}
+          CALC_METHOD: '16'          # 16 = Dubai/UAE, 8 = Gulf Region
+          # ADHAN_PRAYERS: 'Fajr,Maghrib'   # uncomment to limit which prayers play
+        run: python scheduler.py
+
+      - name: Persist state
+        run: |
+          if [ -n "$(git status --porcelain last_fired.json)" ]; then
+            git config user.name "adhan-bot"
+            git config user.email "adhan-bot@users.noreply.github.com"
+            git add last_fired.json
+            git commit -m "state: $(date -u +%FT%TZ)"
+            git pull --rebase --autostash || true
+            git push || true
+          fi
